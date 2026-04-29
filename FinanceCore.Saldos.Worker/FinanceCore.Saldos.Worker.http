@@ -1,6 +1,0 @@
-@FinanceCore.Saldos.Worker_HostAddress = http://localhost:5062
-
-GET {{FinanceCore.Saldos.Worker_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
