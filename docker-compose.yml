@@ -1,0 +1,110 @@
+version: '3.8'
+
+# 🔐 NOTA DE ARQUITETURA E SEGURANÇA:
+# Para fins didáticos e agilidade no ambiente de desenvolvimento local, as credenciais 
+# estão expostas diretamente neste arquivo. 
+#
+# EM AMBIENTE DE PRODUÇÃO (BOAS PRÁTICAS):
+# 1. NUNCA versione senhas no Git. Use um arquivo .env (adicionado ao .gitignore).
+# 2. Utilize Secrets de Orquestradores (Kubernetes Secrets / Docker Secrets).
+# 3. Utilize Cofres de Chaves (Azure Key Vault, AWS Secrets Manager ou HashiCorp Vault).
+# 4. Exemplo de uso correto: POSTGRES_PASSWORD: ${DB_PASSWORD_SECRET}
+
+services:
+  # 🔵 O Banco de Saldos (Relacional / ACID) - Query Side
+  db-finance:
+    image: postgres:latest
+    container_name: postgres-finance
+    environment:
+      POSTGRES_USER: admin           # Produção: Mover para variável de ambiente
+      POSTGRES_PASSWORD: root_password # Produção: USAR SECRET/VAULT
+      POSTGRES_DB: FinanceCoreDB
+    ports:
+      - "5434:5432"
+    networks:
+      - finance-network
+
+  # 🟢 O Banco de Transações (NoSQL / Alta Escrita) - Command Side / Event Store
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb-transactions
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongo_password # Produção: USAR SECRET/VAULT
+    ports:
+      - "27018:27017" # Porta ajustada para evitar conflito com Mongo local
+    networks:
+      - finance-network
+
+  # Interface Visual para o MongoDB (O "Swagger" dos Documentos)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-dashboard
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: mongo_password
+      ME_CONFIG_MONGODB_URL: mongodb://admin:mongo_password@mongodb:27017/
+      # Segurança: Em produção, o acesso a esta UI deve ser restrito via VPN/Auth
+    depends_on:
+      - mongodb
+    networks:
+      - finance-network
+
+  # ⚙️ Gerenciador do Cluster Kafka (Coordenação de Metadados)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper-finance
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - finance-network
+
+  # 🚀 O Motor de Streaming (Kafka) - Engine de Event Sourcing
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka-finance
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092" # Porta para acesso externo (da sua IDE/Localhost)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # --- AJUSTE DE CONEXÃO ---
+      # KAFKA_LISTENERS: Define onde o Kafka "escuta". 0.0.0.0 permite conexões de qualquer interface.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      # KAFKA_ADVERTISED_LISTENERS: Como o Kafka "se apresenta". 
+      # Se sua API chamar localhost:9092, o Kafka responde confirmando que ele é o localhost.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # 💡 ESTA É A CHAVE: Força o modo Zookeeper e evita o erro de PROCESS_ROLES
+      KAFKA_ENABLE_KRAFT: 'false'
+    networks:
+      - finance-network
+
+  # Interface Visual para o Kafka (Observabilidade Humana)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-dashboard
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      # Usa a porta 29092 pois o Dashboard está DENTRO da rede do Docker
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092 
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      # Segurança: Em produção, este dashboard deve ser protegido por Auth (LDAP/AD)
+    networks:
+      - finance-network
+
+networks:
+  finance-network:
+    driver: bridge

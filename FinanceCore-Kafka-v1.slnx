@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="FinanceCore.Saldos.Worker/FinanceCore.Saldos.Worker.csproj" />
+  <Project Path="FinanceCore.Shared/FinanceCore.Shared.csproj" />
+  <Project Path="FinanceCore.Transacoes.API/FinanceCore.Transacoes.API.csproj" />
+</Solution>

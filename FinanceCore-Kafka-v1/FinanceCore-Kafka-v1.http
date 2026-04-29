@@ -1,0 +1,6 @@
+@FinanceCore_Kafka_v1_HostAddress = http://localhost:5257
+
+GET {{FinanceCore_Kafka_v1_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
